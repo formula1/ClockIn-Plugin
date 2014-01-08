@@ -41,22 +41,58 @@ function initialize_clockin() {
 		)
 	);
 
-	add_option("Calander ID", null);
+	add_option("clock-in", array("calender-id"=>null));
 
 }
-$clockin = new clock_in_plugin();
-add_utility_page( "Clock In Settings", "Clockin", "admin", "clock-in", array($clockin, "admin_page"));
+if( is_admin() )
+    $clockin_admin = new clock_in_admin();
 
+class clock_in_admin {
+	public $options;
 
-class clock_in_plugin {
-
-	public function init(){
+	public function __construct(){
+		add_action( 'admin_menu', array( $this, 'add_to_menu' ) );
+        add_action( 'admin_init', array( $this, 'page_init' ) );
+	}
 	
+	public function add_to_menu(){
+		add_utility_page( "Clock In Settings", "Clockin", "administrator", "clock-in-admin", array($this, "admin_page"));
 	}
-
 	public function admin_page(){
-		include "admin_page.php"
+		$this->options = get_option( 'clock-in' );
+		include "admin_page.php";
 	}
+	public function page_init(){
+		register_setting('clock-in', 'calender-id', array( $this, 'sanitize' ) );
+
+		add_settings_section('clock-in-cal', 'Google Calender Setting', array( $this, 'print_section_info' ),'clock-in-admin');
+
+		add_settings_field('calender-id','Calander ID',array( $this, 'calander_id_input' ),'clock-in-admin','clock-in-cal');
+	}
+	
+	 public function print_section_info()
+    {
+        echo 'Enter your settings below:';
+    }
+	
+	public function sanitize( $input ){
+		$new_input = array();
+		if( isset( $input['calander-id'] ) ){
+			//need to check if the calender exists and we can't view and edit it
+			//if we can't edit it, we need to ask for permission
+		}
+
+		return $new_input;
+	}
+	
+	public function calander_id_input()
+	{
+		printf(
+			'<input type="text" id="id_number" name="my_option_name[id_number]" value="%s" />',
+			(isset( $this->options['calender-id'] ) && $this->options['calender-id'] != null) ? esc_attr( $this->options['calender-id']) : ''
+		);
+	}
+	
 
 }
 
