@@ -8,24 +8,18 @@
  * Author URI: http://samtobia.com
  * License: GPL2
  */
- 
- 
+add_action( 'wp', 'clockin_register_js' );
 add_action( 'init', 'initialize_clockin' );
+add_action("wp_ajax_clock_in", "clock_in");
+add_action("wp_ajax_clock_out", "clock_out");
+
+
+function clockin_register_js(){
+	wp_register_script ("clock_in", plugins_url("clockin.js", __FILE__), array("jquery"),false,true);
+	wp_enqueue_script("clock_in_proj", plugins_url("clockin-proj.js",__FILE__), array("jquery"),false, true);
+}
+
 function initialize_clockin() {
-	register_post_type( 'clockin_dev',
-		array(
-			'labels' => array(
-				'name' => __( 'Developers' ),
-				'singular_name' => __( 'Developer' )
-			),
-		'description' => 'The user object associated with the wordpress user. stores the guthub username as well',
-		'public' => true,
-		'has_archive' => true,
-		'show_ui' => false,
-		'show_in_menu' => false,
-		'supports' => false
-		)
-	);
 	register_post_type( 'clockin_project',
 		array(
 			'labels' => array(
@@ -36,65 +30,209 @@ function initialize_clockin() {
 		'public' => true,
 		'has_archive' => true,
 		'show_in_menu' => false,
-		'supports' => false
+		'supports' => array('title','excerpt')
 
 		)
 	);
+	
+	global $wpdb;
+	$sql = "CREATE TABLE Clock_ins (
+	  time datetime DEFAULT NOW() NOT NULL,
+	  duration int DEFAULT 0 NOT NULL,
+	  user tinytext NOT NULL,
+	  project tinytext NOT NULL,
+	);";
 
-	add_option("clock-in", array("calender-id"=>null));
+	global $wpdb;
+
+	require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
+	dbDelta( $sql );
+
+	remove_option("clock-in");
+	add_shortcode( 'clock_in', 'clock_in_setup' );
+
 
 }
-if( is_admin() )
-    $clockin_admin = new clock_in_admin();
 
-class clock_in_admin {
-	public $options;
-
-	public function __construct(){
-		add_action( 'admin_menu', array( $this, 'add_to_menu' ) );
-        add_action( 'admin_init', array( $this, 'page_init' ) );
+function clock_in(){
+	if ( !wp_verify_nonce( $_REQUEST['nonce'], "clock_in")) {
+		exit("No naughty business please");
 	}
+	$user_id = get_current_user_id();
+	if($user_id === 0) die("need to login");
+	$meta = get_user_meta($user_id, "clockin");
+	if($meta == array()) die("this user needs to verify");
+	if($meta["clocked"]) die("already clocked in");
+	$proj = $_REQUEST["proj"];
+
+	$ch = curl_init();
+	curl_setopt($ch, CURLOPT_URL, 'https://api.github.com/repos/'.$proj);
+	curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+	curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
 	
-	public function add_to_menu(){
-		add_utility_page( "Clock In Settings", "Clockin", "administrator", "clock-in-admin", array($this, "admin_page"));
-	}
-	public function admin_page(){
-		$this->options = get_option( 'clock-in' );
-		include "admin_page.php";
-	}
-	public function page_init(){
-		register_setting('clock-in', 'calender-id', array( $this, 'sanitize' ) );
+	curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
+	$result = json_decode(curl_exec($ch));
+	if($result == array()) die("doesn't exsist");
 
-		add_settings_section('clock-in-cal', 'Google Calender Setting', array( $this, 'print_section_info' ),'clock-in-admin');
+	$proja = explode("/",$proj);
+	
 
-		add_settings_field('calender-id','Calander ID',array( $this, 'calander_id_input' ),'clock-in-admin','clock-in-cal');
-	}
+	$ch = curl_init();
+	curl_setopt($ch, CURLOPT_URL, 'https://api.github.com/repos/'.$proj.'/readme');
+	curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+	curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+	curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+		'Accept: application/vnd.github.VERSION.raw'
+    ));
 	
-	 public function print_section_info()
-    {
-        echo 'Enter your settings below:';
-    }
+	curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
+	$readme = json_decode(curl_exec($ch));
+	$wl = array(
+"b", "blockquote" "br", "center", "cite", "code", "col", "colgroup", "div", "dd", "dl", "dt", "em", "font","h1", "h2", 
+"h3", "h4", "h5", "h6", "hr", "i", "img", "li", "ol", "p", "pre", "q", "small", "span", "strike", "strong", "sub", "sup", "table", 
+"tbody", "td", "tfoot", "th", "thread", "tr", "u", "ul"
+);
+	$c = strip_tags_content(base64_decode ($readme->content), "<script><iframe><frame><form>", true);
 	
-	public function sanitize( $input ){
-		$new_input = array();
-		if( isset( $input['calander-id'] ) ){
-			//need to check if the calender exists and we can't view and edit it
-			//if we can't edit it, we need to ask for permission
-		}
-
-		return $new_input;
-	}
-	
-	public function calander_id_input()
-	{
-		printf(
-			'<input type="text" id="id_number" name="my_option_name[id_number]" value="%s" />',
-			(isset( $this->options['calender-id'] ) && $this->options['calender-id'] != null) ? esc_attr( $this->options['calender-id']) : ''
+	if(($proj = get_page_by_title( $proj, "OBJECT", "clockin_project" )) == null){
+		$post = array(
+		  'post_content'   => $c // The full text of the post.
+		  'post_name'      => implode("-", $proja) // The name (slug) for your post
+		  'post_title'     => $proj // The title of your post.
+		  'post_status'    => 'publish',
+		  'post_type'      => "clockin_project", // Default 'post'.
+		  'post_excerpt'   => $result->description // For all your post excerpt needs.
+		  'comment_status' => 'closed' // Default is the option 'default_comment_status', or 'closed'.
 		);
+		$id = wp_insert_post($post, $e);
+		add_post_meta($id, "github-url", $result->html_url, true);
 	}
 	
+	global $wpdb;
+	
+	$wpdb->insert( "Clock_ins", array( 'project' => $id, 'user' => $user_id ));
+
+	
+	$meta["clocked"] = true;
+	update_user_meta($user_id, $meta_key, $meta_value, $prev_value );
+
+	die();
 
 }
+
+function clock_out(){
+	if ( !wp_verify_nonce( $_REQUEST['nonce'], "clock_in")) {
+		exit("No naughty business please");
+	}
+	$user_id = get_current_user_id();
+	if($user_id === 0) die("need to login");
+	$meta = get_user_meta($user_id, "clockin");
+	if($meta == array()) die("this user needs to verify");
+	if(!$meta["clocked"]) die("already clocked out");
+
+	global $wpdb;
+	
+	$ci = $wpdb->get_results( 
+		"
+		SELECT time 
+		FROM Clock_ins
+		WHERE duration = 0 
+		AND user = ".$user_id
+	);
+	
+	if(count($ci) > 1) die("we have a problem");
+	$ci = $ci[0];
+	
+	$wpdb->update( "Clock_ins", array("duration"=>"TIME_TO_SEC(TIMEDIFF(NOW(),start))"), array("duration" = 0 "user" => $user_id));
+	
+	$meta["clocked"] = false;
+	update_user_meta($user_id, $meta_key, $meta_value, $prev_value );
+
+	die();	
+}
+
+function clock_in_setup( $atts, $content=null) {
+	$current_user = wp_get_current_user();
+	$message;
+	$href;
+	$type = "ajax";
+	
+	if ( !($current_user instanceof WP_User) ){
+		$message = "Please Login First";
+		$href = wp_login_url( get_permalink() );
+		$type="self";
+	}else if(($meta = get_user_meta($current_user->ID, "clockin")) == array()){
+		$json = json_decode(file_get_contents("secret.json"));
+		$cid = $json["cid"];
+		$redirect_uri = plugins_url("auth.php", __FILE__);
+		$state = "clock-in_plugin".$current_user->ID;
+	
+		$href = "https://github.com/login/oauth/authorize"
+		$href .= "?client_id=".$cid;
+		$href .= "&redirect_uri=".$redirect_uri;
+		$href .= "&state=".$state;
+		
+		$message = "Authorize our plugin";
+		$type="blank";
+	}else if(isset($atts["cur_project"])){
+		$nonce = wp_create_nonce("clock_in");
+		$href = admin_url('admin-ajax.php?action=clock_in&proj='$atts["curproject"]'&nonce='.$nonce);
+		$message = "Clock in!"
+	}else if($meta["clocked"] == true){
+		$nonce = wp_create_nonce("clock_in");
+		$href = admin_url('admin-ajax.php?action=clock_out&nonce='.$nonce);
+		$message = "Clock out!";
+	}else{
+		$href = plugins_url("clocked.php", __FILE__)."?action=in";
+		$nonce = wp_create_nonce("clock_in");
+
+		ob_start();
+?>
+		Choose a project to Clock Into
+		<div class="clockin-wrap">
+			<a style="display:inline-block;height:144px;width:64px;background-color:#000;"></a>
+			<div class="clockin_projects" style="display:inline-block;height:144px;width:144px;">
+			</div>
+			<a style="display:inline-block;height:144px;width:64px;background-color:#000;">
+			</a>
+		</div>
+<?php
+		wp_enqueue_script ('clock_in_proj');
+		wp_localize_script('clock_in_proj', 'clock_in_vars', array("github_user"=>$meta["github"], "clockin_uri"=>admin_url('admin-ajax.php?action=clock_in&&nonce='.$nonce));
+		return ob_get_clean();
+	}
+	ob_start();
+	?>
+	<div class="clockin-wrap">
+	<a class="clockin_anchor" href=<?php echo $href; echo ($type != "ajax")?" target=".$type.'"'; ?> ><?php echo $message ?></a>
+	<?php 
+	if($type == "ajax"){
+		wp_enqueue_script ('clock_in');
+	}
+	return ob_get_clean();
+}
+
+
+function strip_tags_content($text, $tags = '', $invert = FALSE) { 
+
+  preg_match_all('/<(.+?)[\s]*\/?[\s]*>/si', trim($tags), $tags); 
+  $tags = array_unique($tags[1]); 
+    
+  if(is_array($tags) AND count($tags) > 0) { 
+    if($invert == FALSE) { 
+      return preg_replace('@<(?!(?:'. implode('|', $tags) .')\b)(\w+)\b.*?>.*?</\1>@si', '', $text);
+    } 
+    else { 
+      return preg_replace('@<('. implode('|', $tags) .')\b.*?>.*?</\1>@si', '', $text); 
+    } 
+  } 
+  elseif($invert == FALSE) { 
+    return preg_replace('@<(\w+)\b.*?>.*?</\1>@si', '', $text); 
+  } 
+  return $text; 
+} 
+
+
 
  
  ?>
