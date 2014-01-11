@@ -48,7 +48,7 @@ function initialize_clockin() {
 	require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
 	dbDelta( $sql );
 
-	remove_option("clock-in");
+	delete_option("clock-in");
 	add_shortcode( 'clock_in', 'clock_in_setup' );
 
 
@@ -87,8 +87,7 @@ function clock_in(){
 	
 	curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
 	$readme = json_decode(curl_exec($ch));
-	$wl = array(
-"b", "blockquote" "br", "center", "cite", "code", "col", "colgroup", "div", "dd", "dl", "dt", "em", "font","h1", "h2", 
+	$wl = array("b", "blockquote", "br", "center", "cite", "code", "col", "colgroup", "div", "dd", "dl", "dt", "em", "font","h1", "h2", 
 "h3", "h4", "h5", "h6", "hr", "i", "img", "li", "ol", "p", "pre", "q", "small", "span", "strike", "strong", "sub", "sup", "table", 
 "tbody", "td", "tfoot", "th", "thread", "tr", "u", "ul"
 );
@@ -96,12 +95,12 @@ function clock_in(){
 	
 	if(($proj = get_page_by_title( $proj, "OBJECT", "clockin_project" )) == null){
 		$post = array(
-		  'post_content'   => $c // The full text of the post.
-		  'post_name'      => implode("-", $proja) // The name (slug) for your post
-		  'post_title'     => $proj // The title of your post.
+		  'post_content'   => $c, // The full text of the post.
+		  'post_name'      => implode("-", $proja), // The name (slug) for your post
+		  'post_title'     => $proj, // The title of your post.
 		  'post_status'    => 'publish',
 		  'post_type'      => "clockin_project", // Default 'post'.
-		  'post_excerpt'   => $result->description // For all your post excerpt needs.
+		  'post_excerpt'   => $result->description, // For all your post excerpt needs.
 		  'comment_status' => 'closed' // Default is the option 'default_comment_status', or 'closed'.
 		);
 		$id = wp_insert_post($post, $e);
@@ -143,7 +142,7 @@ function clock_out(){
 	if(count($ci) > 1) die("we have a problem");
 	$ci = $ci[0];
 	
-	$wpdb->update( "Clock_ins", array("duration"=>"TIME_TO_SEC(TIMEDIFF(NOW(),start))"), array("duration" = 0 "user" => $user_id));
+	$wpdb->update( "Clock_ins", array("duration"=>"TIME_TO_SEC(TIMEDIFF(NOW(),start))"), array("duration" => 0, "user" => $user_id));
 	
 	$meta["clocked"] = false;
 	update_user_meta($user_id, $meta_key, $meta_value, $prev_value );
@@ -167,7 +166,7 @@ function clock_in_setup( $atts, $content=null) {
 		$redirect_uri = plugins_url("auth.php", __FILE__);
 		$state = "clock-in_plugin".$current_user->ID;
 	
-		$href = "https://github.com/login/oauth/authorize"
+		$href = "https://github.com/login/oauth/authorize";
 		$href .= "?client_id=".$cid;
 		$href .= "&redirect_uri=".$redirect_uri;
 		$href .= "&state=".$state;
@@ -176,8 +175,8 @@ function clock_in_setup( $atts, $content=null) {
 		$type="blank";
 	}else if(isset($atts["cur_project"])){
 		$nonce = wp_create_nonce("clock_in");
-		$href = admin_url('admin-ajax.php?action=clock_in&proj='$atts["curproject"]'&nonce='.$nonce);
-		$message = "Clock in!"
+		$href = admin_url('admin-ajax.php?action=clock_in&proj='.$atts["curproject"].'&nonce='.$nonce);
+		$message = "Clock in!";
 	}else if($meta["clocked"] == true){
 		$nonce = wp_create_nonce("clock_in");
 		$href = admin_url('admin-ajax.php?action=clock_out&nonce='.$nonce);
@@ -198,13 +197,13 @@ function clock_in_setup( $atts, $content=null) {
 		</div>
 <?php
 		wp_enqueue_script ('clock_in_proj');
-		wp_localize_script('clock_in_proj', 'clock_in_vars', array("github_user"=>$meta["github"], "clockin_uri"=>admin_url('admin-ajax.php?action=clock_in&&nonce='.$nonce));
+		wp_localize_script('clock_in_proj', 'clock_in_vars', array("github_user"=>$meta["github"], "clockin_uri"=>admin_url('admin-ajax.php?action=clock_in&&nonce='.$nonce)));
 		return ob_get_clean();
 	}
 	ob_start();
 	?>
 	<div class="clockin-wrap">
-	<a class="clockin_anchor" href=<?php echo $href; echo ($type != "ajax")?" target=".$type.'"'; ?> ><?php echo $message ?></a>
+	<a class="clockin_anchor" href=<?php echo $href; echo ($type != "ajax")?" target=".$type.'"':''; ?> ><?php echo $message ?></a>
 	<?php 
 	if($type == "ajax"){
 		wp_enqueue_script ('clock_in');
