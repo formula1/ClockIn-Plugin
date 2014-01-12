@@ -20,20 +20,6 @@ register_activation_hook( plugin_dir_path(__FILE__)."/main.php", "activate_clock
 register_uninstall_hook(plugin_dir_path(__FILE__)."/main.php", "uninstall_clockin");
 
 function activate_clockin(){
-	register_post_type( 'clockin_project',
-		array(
-			'labels' => array(
-				'name' => __( 'Github Projects' ),
-				'singular_name' => __( 'Github Project' )
-			),
-		'description' => 'Associated to Github Project',
-		'public' => true,
-		'has_archive' => true,
-		'show_in_menu' => false,
-		'supports' => array('title','excerpt')
-
-		)
-	);
 
 	global $wpdb;
 	$sql = "CREATE TABLE Clock_ins (
@@ -65,7 +51,21 @@ function clockin_register_js(){
 }
 
 function initialize_clockin() {
-	
+//	delete_user_meta(get_current_user_id(), "clockin");
+	register_post_type( 'clockin_project',
+		array(
+			'labels' => array(
+				'name' => __( 'Github Projects' ),
+				'singular_name' => __( 'Github Project' )
+			),
+		'description' => 'Associated to Github Project',
+		'public' => true,
+		'has_archive' => true,
+		'show_in_menu' => true,
+		'supports' => array('title','excerpt', 'editor')
+
+		)
+	);
 
 	add_shortcode( 'clock_in', 'clock_in_setup' );
 
@@ -73,18 +73,21 @@ function initialize_clockin() {
 }
 
 function clock_in(){
-	if ( !wp_verify_nonce( $_REQUEST['nonce'], "clock_in")) {
+	if ( !wp_verify_nonce( $_GET['nonce'], "clock_in")) {
 		exit("No naughty business please");
 	}
 	$user_id = get_current_user_id();
 	if($user_id === 0) die("need to login");
 	$meta = get_user_meta($user_id, "clockin");
 	if($meta == array()) die("this user needs to verify");
-	if($meta["clocked"]) die("already clocked in");
-	$proj = $_REQUEST["proj"];
-
+	if($meta[0]["clocked"]) die("already clocked in");
+	$proj = $_GET["proj"];
+	
 	$ch = curl_init();
-	curl_setopt($ch, CURLOPT_URL, 'https://api.github.com/repos/'.$proj);
+	curl_setopt($ch, CURLOPT_URL, 'https://api.github.com/repos/'.$proj.'?access_token='.$meta[0]["token"]);
+	curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+		'User-Agent: Clock-In-Prep'
+	));
 	curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 	curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
 	
@@ -96,11 +99,12 @@ function clock_in(){
 	
 
 	$ch = curl_init();
-	curl_setopt($ch, CURLOPT_URL, 'https://api.github.com/repos/'.$proj.'/readme');
+	curl_setopt($ch, CURLOPT_URL, 'https://api.github.com/repos/'.$proj.'/readme'.'?access_token='.$meta[0]["token"]);
 	curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 	curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
 	curl_setopt($ch, CURLOPT_HTTPHEADER, array(
 		'Accept: application/vnd.github.VERSION.raw'
+		,'User-Agent: Clock-In-Prep'
     ));
 	
 	curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
@@ -111,7 +115,7 @@ function clock_in(){
 );
 	$c = strip_tags_content(base64_decode ($readme->content), "<script><iframe><frame><form>", true);
 	
-	if(($proj = get_page_by_title( $proj, "OBJECT", "clockin_project" )) == null){
+	if(($project = get_page_by_title( $proj, "OBJECT", "clockin_project" )) == null){
 		$post = array(
 		  'post_content'   => $c, // The full text of the post.
 		  'post_name'      => implode("-", $proja), // The name (slug) for your post
@@ -123,15 +127,15 @@ function clock_in(){
 		);
 		$id = wp_insert_post($post, $e);
 		add_post_meta($id, "github-url", $result->html_url, true);
-	}
+	}else{ $id = $project->ID;}
 	
 	global $wpdb;
 	
 	$wpdb->insert( "Clock_ins", array( 'project' => $id, 'user' => $user_id ));
 
 	
-	$meta["clocked"] = true;
-	update_user_meta($user_id, "clockin", $meta );
+	$meta[0]["clocked"] = true;
+	update_user_meta($user_id, "clockin", $meta[0] );
 
 	die();
 
@@ -145,7 +149,7 @@ function clock_out(){
 	if($user_id === 0) die("need to login");
 	$meta = get_user_meta($user_id, "clockin");
 	if($meta == array()) die("this user needs to verify");
-	if(!$meta["clocked"]) die("already clocked out");
+	if(!$meta[0]["clocked"]) die("already clocked out");
 
 	global $wpdb;
 	
@@ -162,8 +166,8 @@ function clock_out(){
 	
 	$wpdb->update( "Clock_ins", array("duration"=>"TIME_TO_SEC(TIMEDIFF(NOW(),start))"), array("duration" => 0, "user" => $user_id));
 	
-	$meta["clocked"] = false;
-	update_user_meta($user_id, "clockin", $meta );
+	$meta[0]["clocked"] = false;
+	update_user_meta($user_id, "clockin", $meta[0] );
 
 	die();	
 }
@@ -172,12 +176,10 @@ function clock_in_setup( $atts, $content=null) {
 	$current_user = wp_get_current_user();
 	$message;
 	$href;
-	$type = "ajax";
-	
+		
 	if ( !($current_user instanceof WP_User) ){
 		$message = "Please Login First";
 		$href = wp_login_url( get_permalink() );
-		$type="self";
 	}else if(($meta = get_user_meta($current_user->ID, "clockin")) == array()){
 		$json = json_decode(file_get_contents(plugin_dir_path( __FILE__ )."/secret.json"));
 		$cid = $json->cid;
@@ -190,33 +192,33 @@ function clock_in_setup( $atts, $content=null) {
 		$href .= "&state=".$state;
 		
 		$message = "Authorize our plugin";
-		$type="self";
 	}else if(isset($atts["cur_project"])){
 		$nonce = wp_create_nonce("clock_in");
 		$href = admin_url('admin-ajax.php?action=clock_in&proj='.$atts["curproject"].'&nonce='.$nonce);
 		$message = "Clock in!";
+	$type = "ajax";
 	}else if($meta[0]["clocked"] == true){
 		$nonce = wp_create_nonce("clock_in");
 		$href = admin_url('admin-ajax.php?action=clock_out&nonce='.$nonce);
 		$message = "Clock out!";
+	$type = "ajax";
 	}else{
 		$href = plugins_url("clocked.php", __FILE__)."?action=in";
 		$nonce = wp_create_nonce("clock_in");
+		wp_enqueue_script ('clock_in');
 
 		wp_enqueue_script ('clock_in_proj');
-		wp_localize_script('clock_in_proj', 'clock_in_vars', array("github_user"=>$meta[0]["github"], "clockin_uri"=>admin_url('admin-ajax.php?action=clock_in&nonce='.$nonce)));
+		wp_localize_script('clock_in_proj', 'clock_in_vars', array("github_user"=>$meta[0]["github"], "token"=>$meta[0]["token"],"clockin_uri"=>admin_url('admin-ajax.php?action=clock_in&nonce='.$nonce)));
 
 		ob_start();
-		print_r($meta);
 ?>
 		
 		Choose a project to Clock Into
 		<div class="clockin-wrap">
-			<a style="display:inline-block;height:144px;width:64px;background-color:#000;"></a>
-			<div class="clockin_projects" style="display:inline-block;height:144px;width:144px;">
+			<a href="#" style="display:block;background-color:#000;">Up a Page</a>
+			<div class="clockin_projects" style="display:inline-block;height:128px;overflow-y:scroll;width:100%">
 			</div>
-			<a style="display:inline-block;height:144px;width:64px;background-color:#000;">
-			</a>
+			<a href="#" style="display:block;background-color:#000;">Down a Page</a>
 		</div>
 <?php
 		return ob_get_clean();
@@ -224,7 +226,7 @@ function clock_in_setup( $atts, $content=null) {
 	ob_start();
 	?>
 	<div class="clockin-wrap">
-	<a class="clockin_anchor" href=<?php echo $href; echo ($type != "ajax")?" target=".$type.'"':''; ?> ><?php echo $message ?></a>
+	<a class="clockin_anchor" href="<?php echo $href; ?>" ><?php echo $message ?></a>
 	</div>
 	<?php 
 	if($type == "ajax"){

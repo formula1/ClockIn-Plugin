@@ -54,7 +54,7 @@ $ch = curl_init();
 curl_setopt($ch, CURLOPT_URL, $url);
 // Set so curl_exec returns the result instead of outputting it.
 curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-	'User-Agent: formula1',
+	'User-Agent: Clock-In-Prep',
 ));
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
@@ -65,6 +65,6 @@ curl_close($ch);
 
 $userinfo = json_decode($response);
 
-update_user_meta( $id, "clockin", array("clocked" => false, "github" => $userinfo->login) );
+update_user_meta( $id, "clockin", array("clocked" => false, "github" => $userinfo->login, "token"=>$result->access_token) );
 wp_redirect( home_url() ); exit;
 ?>
