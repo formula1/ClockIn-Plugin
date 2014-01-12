@@ -1,7 +1,5 @@
 
-var clock_in_proj;
-jQuery(function($){
-clock_in_proj = function($){
+var clock_in_proj = function($){
 	var page = 1;
 	var last_page = -1;
 	var that = this;
@@ -48,6 +46,4 @@ clock_in_proj = function($){
 	
 	this.getPage();
 
-}($);
-
-});
+};

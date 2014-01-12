@@ -21,13 +21,14 @@ register_uninstall_hook(plugin_dir_path(__FILE__)."/main.php", "uninstall_clocki
 
 function activate_clockin(){
 
+	$tablename = $wpdb->prefix ."Clock_ins";
 	global $wpdb;
-	$sql = "CREATE TABLE Clock_ins (
-	  time datetime DEFAULT NOW() NOT NULL,
-	  duration int DEFAULT 0 NOT NULL,
-	  user tinytext NOT NULL,
-	  project tinytext NOT NULL
-	);";
+	$sql = "CREATE TABLE ".$tablename." (
+	  starttime TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	  duration INT DEFAULT 0 NOT NULL,
+	  devuser TINYTEXT NOT NULL,
+	  project TINYTEXT NOT NULL
+	 );";
 
 	require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
 	dbDelta( $sql );
@@ -35,6 +36,13 @@ function activate_clockin(){
 
 
 function uninstall_clockin(){
+
+$mycustomposts = get_pages( array( 'post_type' => 'clockin_project', 'number' => 500) );
+   foreach( $mycustomposts as $mypost ) {
+     // Delete's each post.
+     wp_delete_post( $mypost->ID, true);
+    // Set to False if you want to send them to Trash.
+   }
 
 	$sql = "DROP TABLE Clock_ins";
 	global $wpdb;
@@ -74,13 +82,13 @@ function initialize_clockin() {
 
 function clock_in(){
 	if ( !wp_verify_nonce( $_GET['nonce'], "clock_in")) {
-		exit("No naughty business please");
+		exit("failure: No naughty business please");
 	}
 	$user_id = get_current_user_id();
-	if($user_id === 0) die("need to login");
+	if($user_id === 0) die("failure: need to login");
 	$meta = get_user_meta($user_id, "clockin");
-	if($meta == array()) die("this user needs to verify");
-	if($meta[0]["clocked"]) die("already clocked in");
+	if($meta == array()) die("failure: this user needs to verify");
+	if($meta[0]["clocked"]) die("failure: already clocked in");
 	$proj = $_GET["proj"];
 	
 	$ch = curl_init();
@@ -93,7 +101,7 @@ function clock_in(){
 	
 	curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
 	$result = json_decode(curl_exec($ch));
-	if($result == array()) die("doesn't exsist");
+	if($result == array()) die("failure: doesn't exsist");
 
 	$proja = explode("/",$proj);
 	
@@ -131,45 +139,43 @@ function clock_in(){
 	
 	global $wpdb;
 	
-	$wpdb->insert( "Clock_ins", array( 'project' => $id, 'user' => $user_id ));
+	$wpdb->insert( "Clock_ins", array( 'project' => $id, 'devuser' => $user_id ));
 
 	
 	$meta[0]["clocked"] = true;
 	update_user_meta($user_id, "clockin", $meta[0] );
 
-	die();
+	die(do_shortcode("[clock_in]"));
 
 }
 
 function clock_out(){
 	if ( !wp_verify_nonce( $_REQUEST['nonce'], "clock_in")) {
-		exit("No naughty business please");
+		exit("failure: No naughty business please");
 	}
 	$user_id = get_current_user_id();
-	if($user_id === 0) die("need to login");
+	if($user_id === 0) die("failure: need to login");
 	$meta = get_user_meta($user_id, "clockin");
-	if($meta == array()) die("this user needs to verify");
-	if(!$meta[0]["clocked"]) die("already clocked out");
+	if($meta == array()) die("failure: this user needs to verify");
+	if(!$meta[0]["clocked"]) die("failure: already clocked out");
 
 	global $wpdb;
 	
-	$ci = $wpdb->get_results( 
+	$ci = $wpdb->get_var( 
 		"
-		SELECT time 
-		FROM Clock_ins
+		SELECT TIME_TO_SEC(TIMEDIFF(CURRENT_TIMESTAMP,starttime)) 
+		FROM clock_ins
 		WHERE duration = 0 
-		AND user = ".$user_id
+		AND devuser = ".$user_id
 	);
 	
-	if(count($ci) > 1) die("we have a problem");
-	$ci = $ci[0];
 	
-	$wpdb->update( "Clock_ins", array("duration"=>"TIME_TO_SEC(TIMEDIFF(NOW(),start))"), array("duration" => 0, "user" => $user_id));
+	$wpdb->update( "Clock_ins", array("duration"=>$ci), array("duration" => 0, "devuser" => $user_id));
 	
 	$meta[0]["clocked"] = false;
 	update_user_meta($user_id, "clockin", $meta[0] );
 
-	die();	
+	die(do_shortcode("[clock_in]"));	
 }
 
 function clock_in_setup( $atts, $content=null) {
@@ -177,7 +183,7 @@ function clock_in_setup( $atts, $content=null) {
 	$message;
 	$href;
 		
-	if ( !($current_user instanceof WP_User) ){
+	if (  !is_user_logged_in() || !($current_user instanceof WP_User) ){
 		$message = "Please Login First";
 		$href = wp_login_url( get_permalink() );
 	}else if(($meta = get_user_meta($current_user->ID, "clockin")) == array()){
@@ -188,7 +194,7 @@ function clock_in_setup( $atts, $content=null) {
 	
 		$href = "https://github.com/login/oauth/authorize";
 		$href .= "?client_id=".$cid;
-		$href .= "&redirect_uri=".$redirect_uri;
+		$href .= "&redirect_uri=".urlencode($redirect_uri);
 		$href .= "&state=".$state;
 		
 		$message = "Authorize our plugin";
@@ -213,13 +219,16 @@ function clock_in_setup( $atts, $content=null) {
 		ob_start();
 ?>
 		
-		Choose a project to Clock Into
 		<div class="clockin-wrap">
+			Choose a project to Clock Into
 			<a href="#" style="display:block;background-color:#000;">Up a Page</a>
 			<div class="clockin_projects" style="display:inline-block;height:128px;overflow-y:scroll;width:100%">
 			</div>
 			<a href="#" style="display:block;background-color:#000;">Down a Page</a>
 		</div>
+		<script type="text/javascript">
+			jQuery(function($){clock_in_proj($)});
+		</script>
 <?php
 		return ob_get_clean();
 	}
