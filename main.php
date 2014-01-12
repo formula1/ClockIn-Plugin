@@ -12,14 +12,14 @@ add_action( 'wp', 'clockin_register_js' );
 add_action( 'init', 'initialize_clockin' );
 add_action("wp_ajax_clock_in", "clock_in");
 add_action("wp_ajax_clock_out", "clock_out");
+add_action( 'widgets_init', function(){
+	include plugin_dir_path( __FILE__)."/widget.php";
+	register_widget( 'My_Widget' );
+});
+register_activation_hook( plugin_dir_path(__FILE__)."/main.php", "activate_clockin" );
+register_uninstall_hook(plugin_dir_path(__FILE__)."/main.php", "uninstall_clockin");
 
-
-function clockin_register_js(){
-	wp_register_script ("clock_in", plugins_url("clockin.js", __FILE__), array("jquery"),false,true);
-	wp_enqueue_script("clock_in_proj", plugins_url("clockin-proj.js",__FILE__), array("jquery"),false, true);
-}
-
-function initialize_clockin() {
+function activate_clockin(){
 	register_post_type( 'clockin_project',
 		array(
 			'labels' => array(
@@ -34,21 +34,39 @@ function initialize_clockin() {
 
 		)
 	);
-	
+
 	global $wpdb;
 	$sql = "CREATE TABLE Clock_ins (
 	  time datetime DEFAULT NOW() NOT NULL,
 	  duration int DEFAULT 0 NOT NULL,
 	  user tinytext NOT NULL,
-	  project tinytext NOT NULL,
+	  project tinytext NOT NULL
 	);";
-
-	global $wpdb;
 
 	require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
 	dbDelta( $sql );
+}
 
-	delete_option("clock-in");
+
+function uninstall_clockin(){
+
+	$sql = "DROP TABLE Clock_ins";
+	global $wpdb;
+	require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
+	dbDelta( $sql );
+
+}
+
+
+
+function clockin_register_js(){
+	wp_register_script ("clock_in", plugins_url("clockin.js", __FILE__), array("jquery"),false,true);
+	wp_register_script("clock_in_proj", plugins_url("clockin-proj.js",__FILE__), array("jquery"),false, true);
+}
+
+function initialize_clockin() {
+	
+
 	add_shortcode( 'clock_in', 'clock_in_setup' );
 
 
@@ -113,7 +131,7 @@ function clock_in(){
 
 	
 	$meta["clocked"] = true;
-	update_user_meta($user_id, $meta_key, $meta_value, $prev_value );
+	update_user_meta($user_id, "clockin", $meta );
 
 	die();
 
@@ -145,7 +163,7 @@ function clock_out(){
 	$wpdb->update( "Clock_ins", array("duration"=>"TIME_TO_SEC(TIMEDIFF(NOW(),start))"), array("duration" => 0, "user" => $user_id));
 	
 	$meta["clocked"] = false;
-	update_user_meta($user_id, $meta_key, $meta_value, $prev_value );
+	update_user_meta($user_id, "clockin", $meta );
 
 	die();	
 }
@@ -161,8 +179,8 @@ function clock_in_setup( $atts, $content=null) {
 		$href = wp_login_url( get_permalink() );
 		$type="self";
 	}else if(($meta = get_user_meta($current_user->ID, "clockin")) == array()){
-		$json = json_decode(file_get_contents("secret.json"));
-		$cid = $json["cid"];
+		$json = json_decode(file_get_contents(plugin_dir_path( __FILE__ )."/secret.json"));
+		$cid = $json->cid;
 		$redirect_uri = plugins_url("auth.php", __FILE__);
 		$state = "clock-in_plugin".$current_user->ID;
 	
@@ -172,12 +190,12 @@ function clock_in_setup( $atts, $content=null) {
 		$href .= "&state=".$state;
 		
 		$message = "Authorize our plugin";
-		$type="blank";
+		$type="self";
 	}else if(isset($atts["cur_project"])){
 		$nonce = wp_create_nonce("clock_in");
 		$href = admin_url('admin-ajax.php?action=clock_in&proj='.$atts["curproject"].'&nonce='.$nonce);
 		$message = "Clock in!";
-	}else if($meta["clocked"] == true){
+	}else if($meta[0]["clocked"] == true){
 		$nonce = wp_create_nonce("clock_in");
 		$href = admin_url('admin-ajax.php?action=clock_out&nonce='.$nonce);
 		$message = "Clock out!";
@@ -185,8 +203,13 @@ function clock_in_setup( $atts, $content=null) {
 		$href = plugins_url("clocked.php", __FILE__)."?action=in";
 		$nonce = wp_create_nonce("clock_in");
 
+		wp_enqueue_script ('clock_in_proj');
+		wp_localize_script('clock_in_proj', 'clock_in_vars', array("github_user"=>$meta[0]["github"], "clockin_uri"=>admin_url('admin-ajax.php?action=clock_in&nonce='.$nonce)));
+
 		ob_start();
+		print_r($meta);
 ?>
+		
 		Choose a project to Clock Into
 		<div class="clockin-wrap">
 			<a style="display:inline-block;height:144px;width:64px;background-color:#000;"></a>
@@ -196,14 +219,13 @@ function clock_in_setup( $atts, $content=null) {
 			</a>
 		</div>
 <?php
-		wp_enqueue_script ('clock_in_proj');
-		wp_localize_script('clock_in_proj', 'clock_in_vars', array("github_user"=>$meta["github"], "clockin_uri"=>admin_url('admin-ajax.php?action=clock_in&&nonce='.$nonce)));
 		return ob_get_clean();
 	}
 	ob_start();
 	?>
 	<div class="clockin-wrap">
 	<a class="clockin_anchor" href=<?php echo $href; echo ($type != "ajax")?" target=".$type.'"':''; ?> ><?php echo $message ?></a>
+	</div>
 	<?php 
 	if($type == "ajax"){
 		wp_enqueue_script ('clock_in');
