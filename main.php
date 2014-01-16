@@ -8,10 +8,14 @@
  * Author URI: http://samtobia.com
  * License: GPL2
  */
+
+require_once(dirname(__FILE__)."/utils.php");
+ 
 add_action( 'wp', 'clockin_register_js' );
 add_action( 'init', 'initialize_clockin' );
 add_action("wp_ajax_clock_in", "clock_in");
 add_action("wp_ajax_clock_out", "clock_out");
+add_action("wp_ajax_cl_projects", "getUsersProjects");
 add_action( 'widgets_init', function(){
 	include plugin_dir_path( __FILE__)."/widget.php";
 	register_widget( 'My_Widget' );
@@ -54,8 +58,12 @@ $mycustomposts = get_pages( array( 'post_type' => 'clockin_project', 'number' =>
 
 
 function clockin_register_js(){
+	wp_register_script("jquery-xslt", plugins_url("ui/jquery.xslt.js",__FILE__), array("jquery"),false, true);
 	wp_register_script ("clock_in", plugins_url("clockin.js", __FILE__), array("jquery"),false,true);
 	wp_register_script("clock_in_proj", plugins_url("clockin-proj.js",__FILE__), array("jquery"),false, true);
+	wp_register_script("waypoint", plugins_url("waypoints/waypoints.min.js",__FILE__), array("jquery"));
+	wp_register_script("waypoint_infinite", plugins_url("waypoints/shortcuts/infinite-scroll/waypoints-infinite.min.js",__FILE__), array("waypoint"));
+	wp_register_style( "clock_in_shortcode", plugins_url("ui/clockin.css",__FILE__));
 }
 
 function initialize_clockin() {
@@ -75,12 +83,13 @@ function initialize_clockin() {
 		)
 	);
 
-	add_shortcode( 'clock_in', 'clock_in_setup' );
+	add_shortcode( 'clock_in', 'clock_in_shortcode' );
 
 
 }
 
 function clock_in(){
+	global $cl_utils;
 	if ( !wp_verify_nonce( $_GET['nonce'], "clock_in")) {
 		exit("failure: No naughty business please");
 	}
@@ -90,40 +99,31 @@ function clock_in(){
 	if($meta == array()) die("failure: this user needs to verify");
 	if($meta[0]["clocked"]) die("failure: already clocked in");
 	$proj = $_GET["proj"];
-	
-	$ch = curl_init();
-	curl_setopt($ch, CURLOPT_URL, 'https://api.github.com/repos/'.$proj.'?access_token='.$meta[0]["token"]);
-	curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-		'User-Agent: Clock-In-Prep'
-	));
-	curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-	curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-	
-	curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
-	$result = json_decode(curl_exec($ch));
+
+	try{
+		$result = $cl_utils::getURL('https://api.github.com/repos/'.$proj, $meta[0]["token"]);
+	}catch(Exception $e){
+		
+	}
 	if($result == array()) die("failure: doesn't exsist");
 
 	$proja = explode("/",$proj);
 	
-
-	$ch = curl_init();
-	curl_setopt($ch, CURLOPT_URL, 'https://api.github.com/repos/'.$proj.'/readme'.'?access_token='.$meta[0]["token"]);
-	curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-	curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-	curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-		'Accept: application/vnd.github.VERSION.raw'
-		,'User-Agent: Clock-In-Prep'
-    ));
-	
-	curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
-	$readme = json_decode(curl_exec($ch));
-	$wl = array("b", "blockquote", "br", "center", "cite", "code", "col", "colgroup", "div", "dd", "dl", "dt", "em", "font","h1", "h2", 
-"h3", "h4", "h5", "h6", "hr", "i", "img", "li", "ol", "p", "pre", "q", "small", "span", "strike", "strong", "sub", "sup", "table", 
-"tbody", "td", "tfoot", "th", "thread", "tr", "u", "ul"
-);
-	$c = strip_tags_content(base64_decode ($readme->content), "<script><iframe><frame><form>", true);
 	
 	if(($project = get_page_by_title( $proj, "OBJECT", "clockin_project" )) == null){
+	
+		try{
+			$readme = $cl_utils::getURL('https://api.github.com/repos/'.$proj.'/readme', $meta[0]["token"], array('Accept'=> 'application/vnd.github.VERSION.raw'));
+		}catch(Exception $e){
+			
+		}
+			$wl = array("b", "blockquote", "br", "center", "cite", "code", "col", "colgroup", "div", "dd", "dl", "dt", "em", "font","h1", "h2", 
+		"h3", "h4", "h5", "h6", "hr", "i", "img", "li", "ol", "p", "pre", "q", "small", "span", "strike", "strong", "sub", "sup", "table", 
+		"tbody", "td", "tfoot", "th", "thread", "tr", "u", "ul"
+		);
+		$c = $cl_urils::strip_tags_content(base64_decode ($readme->content), "<script><iframe><frame><form>", true);
+
+	
 		$post = array(
 		  'post_content'   => $c, // The full text of the post.
 		  'post_name'      => implode("-", $proja), // The name (slug) for your post
@@ -178,93 +178,23 @@ function clock_out(){
 	die(do_shortcode("[clock_in]"));	
 }
 
-function clock_in_setup( $atts, $content=null) {
-	$current_user = wp_get_current_user();
-	$message;
-	$href;
-		
-	if (  !is_user_logged_in() || !($current_user instanceof WP_User) ){
-		$message = "Please Login First";
-		$href = wp_login_url( get_permalink() );
-	}else if(($meta = get_user_meta($current_user->ID, "clockin")) == array()){
-		$json = json_decode(file_get_contents(plugin_dir_path( __FILE__ )."/secret.json"));
-		$cid = $json->cid;
-		$redirect_uri = plugins_url("auth.php", __FILE__);
-		$state = "clock-in_plugin".$current_user->ID;
-	
-		$href = "https://github.com/login/oauth/authorize";
-		$href .= "?client_id=".$cid;
-		$href .= "&redirect_uri=".urlencode($redirect_uri);
-		$href .= "&state=".$state;
-		
-		$message = "Authorize our plugin";
-	}else if(isset($atts["cur_project"])){
-		$nonce = wp_create_nonce("clock_in");
-		$href = admin_url('admin-ajax.php?action=clock_in&proj='.$atts["curproject"].'&nonce='.$nonce);
-		$message = "Clock in!";
-	$type = "ajax";
-	}else if($meta[0]["clocked"] == true){
-		$nonce = wp_create_nonce("clock_in");
-		$href = admin_url('admin-ajax.php?action=clock_out&nonce='.$nonce);
-		$message = "Clock out!";
-	$type = "ajax";
-	}else{
-		$href = plugins_url("clocked.php", __FILE__)."?action=in";
-		$nonce = wp_create_nonce("clock_in");
-		wp_enqueue_script ('clock_in');
-
-		wp_enqueue_script ('clock_in_proj');
-		wp_localize_script('clock_in_proj', 'clock_in_vars', array("github_user"=>$meta[0]["github"], "token"=>$meta[0]["token"],"clockin_uri"=>admin_url('admin-ajax.php?action=clock_in&nonce='.$nonce)));
-
-		ob_start();
-?>
-		
-		<div class="clockin-wrap">
-			Choose a project to Clock Into
-			<a href="#" style="display:block;background-color:#000;">Up a Page</a>
-			<div class="clockin_projects" style="display:inline-block;height:128px;overflow-y:scroll;width:100%">
-			</div>
-			<a href="#" style="display:block;background-color:#000;">Down a Page</a>
-		</div>
-		<script type="text/javascript">
-			jQuery(function($){clock_in_proj($)});
-		</script>
-<?php
-		return ob_get_clean();
-	}
-	ob_start();
-	?>
-	<div class="clockin-wrap">
-	<a class="clockin_anchor" href="<?php echo $href; ?>" ><?php echo $message ?></a>
-	</div>
-	<?php 
-	if($type == "ajax"){
-		wp_enqueue_script ('clock_in');
-	}
-	return ob_get_clean();
+function getUsersProjects(){
+	require plugin_dir_path(__FILE__)."/ui/users_projects.php";
+	getCLProjects($_GET["page"], $_GET['nonce']);
+	die();
 }
 
-
-function strip_tags_content($text, $tags = '', $invert = FALSE) { 
-
-  preg_match_all('/<(.+?)[\s]*\/?[\s]*>/si', trim($tags), $tags); 
-  $tags = array_unique($tags[1]); 
-    
-  if(is_array($tags) AND count($tags) > 0) { 
-    if($invert == FALSE) { 
-      return preg_replace('@<(?!(?:'. implode('|', $tags) .')\b)(\w+)\b.*?>.*?</\1>@si', '', $text);
-    } 
-    else { 
-      return preg_replace('@<('. implode('|', $tags) .')\b.*?>.*?</\1>@si', '', $text); 
-    } 
-  } 
-  elseif($invert == FALSE) { 
-    return preg_replace('@<(\w+)\b.*?>.*?</\1>@si', '', $text); 
-  } 
-  return $text; 
-} 
-
-
-
+function clock_in_shortcode( $atts, $content=null) {
+	wp_enqueue_style("clock_in_shortcode");
+	ob_start();
+?>
+		<aside id="clock_in_widget" class="widget">
+<?php	
+	require dirname(__FILE__)."/ui/shortcode.php";
+?>
+		</aside>
+<?php
+	return ob_get_clean();
+}
  
  ?>

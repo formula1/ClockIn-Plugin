@@ -1,6 +1,7 @@
 <?php
 
 require("../../../wp-load.php");
+require_once(dirname(__FILE__)."/utils.php");
 $json = json_decode(file_get_contents(plugin_dir_path( __FILE__ )."/secret.json"));
 
 $id = get_current_user_id();
@@ -45,25 +46,16 @@ curl_setopt($ch, CURLOPT_HTTPHEADER, array(
 curl_setopt($ch, CURLOPT_POSTFIELDS, $postdata);
 curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
 $result = curl_exec($ch);
+$http_status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $result = json_decode($result);
-
-
-
-$url = "https://api.github.com/user?access_token=".$result->access_token;
-$ch = curl_init();
-curl_setopt($ch, CURLOPT_URL, $url);
-// Set so curl_exec returns the result instead of outputting it.
-curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-	'User-Agent: Clock-In-Prep',
-));
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
-// Get the response and close the channel.
-$response = curl_exec($ch);
 curl_close($ch);
 
-$userinfo = json_decode($response);
+
+try{
+	$userinfo = $cl_utils::getURL("https://api.github.com/user", $result->access_token);
+}catch(Exception $e){
+	die();
+}
 
 update_user_meta( $id, "clockin", array("clocked" => false, "github" => $userinfo->login, "token"=>$result->access_token) );
 wp_redirect( home_url() ); exit;
