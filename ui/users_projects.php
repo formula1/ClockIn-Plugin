@@ -36,7 +36,7 @@ function getCLProjects($page, $nonce = null){
 		}
 	?>
 			<a target="_blank" href='<?php echo $item->html_url; ?>' >Github Page</a><br />
-			<a class='clockin_anchor' href='<?php echo admin_url('admin-ajax.php?action=clock_in&nonce='.$nonce)."&proj=".$item->full_name; ?>'>Clock In</a>
+			<a class='clockin_anchor' href='<?php echo admin_url('admin-ajax.php?action=clock_in&nonce='.$nonce)."&proj=".urlencode($item->full_name); ?>'>Clock In</a>
 		</li>
 	<?php
 	}

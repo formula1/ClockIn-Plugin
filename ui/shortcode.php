@@ -36,7 +36,7 @@ if (  !is_user_logged_in() || !($current_user instanceof WP_User) ){
 	wp_enqueue_script ('waypoint_infinite');
 	wp_localize_script('clock_in_proj', 'clock_in_vars', array("clockin_uri"=>admin_url('admin-ajax.php?action=clock_in&nonce='.$nonce)));
 	if(isset($atts["cur_project"])){
-		$href = admin_url('admin-ajax.php?action=clock_in&proj='.$atts["curproject"].'&nonce='.$nonce);
+		$href = admin_url('admin-ajax.php?action=clock_in&proj='.urlencode($atts["curproject"]).'&nonce='.$nonce);
 		$message = "Clock in!";
 ?>
 <div class="clockin-wrap">

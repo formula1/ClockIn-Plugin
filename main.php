@@ -98,7 +98,7 @@ function clock_in(){
 	$meta = get_user_meta($user_id, "clockin");
 	if($meta == array()) die("failure: this user needs to verify");
 	if($meta[0]["clocked"]) die("failure: already clocked in");
-	$proj = $_GET["proj"];
+	$proj = urldecode($_GET["proj"]);
 
 	try{
 		$result = $cl_utils::getURL('https://api.github.com/repos/'.$proj, $meta[0]["token"]);
@@ -121,7 +121,7 @@ function clock_in(){
 		"h3", "h4", "h5", "h6", "hr", "i", "img", "li", "ol", "p", "pre", "q", "small", "span", "strike", "strong", "sub", "sup", "table", 
 		"tbody", "td", "tfoot", "th", "thread", "tr", "u", "ul"
 		);
-		$c = $cl_urils::strip_tags_content(base64_decode ($readme->content), "<script><iframe><frame><form>", true);
+		$c = $cl_utils::strip_tags_content(base64_decode ($readme->content), "<script><iframe><frame><form>", true);
 
 	
 		$post = array(
