@@ -3,7 +3,13 @@
 
 class clock_in_utils{
 
-	static public function getUrl($url, $token, $headers = array()){
+	static public function getUrl($url, $user_id, $headers = array()){
+		if($user_id === 0) throw new Exception("failure: need to login");
+		$meta = get_user_meta($user_id, "clockin");
+		if($meta == array()) throw new Exception("failure: this user needs to verify");
+		$token = $meta[0]["token"];
+
+	
 		$h = array();
 		foreach($headers as $k=>$v){
 			array_push($h, $k.": ".$v);
@@ -26,9 +32,10 @@ class clock_in_utils{
 		$http_status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 		curl_close($ch);
 		
-		if($http_status != 200 && $http_status != 301){
-			throw new Exception($http_status);
+		if($http_status == 403 || $http_status == 404){
+			throw new Exception("no access");
 		}
+		
 		return $response;
 		
 	}
@@ -51,5 +58,5 @@ class clock_in_utils{
 	  return $text; 
 	}
 }
-
+global $cl_utils;
 $cl_utils = new clock_in_utils();

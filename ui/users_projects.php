@@ -16,7 +16,7 @@ function getCLProjects($page, $nonce = null){
 	$href = 'https://api.github.com/users/'.$meta[0]["github"].'/repos?type=all&sort=updated&per_page=4&page='.$page;
 
 	try{
-		$result = $cl_utils::getURL($href, $meta[0]["token"]);
+		$result = $cl_utils::getURL($href, $user_id);
 	}catch(Exception $e){
 		echo $href;
 		die($e);

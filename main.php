@@ -11,6 +11,7 @@
 
 require_once(dirname(__FILE__)."/utils.php");
  
+add_action( 'delete_user', 'cl_delete_user' );
 add_action( 'wp', 'clockin_register_js' );
 add_action( 'init', 'initialize_clockin' );
 add_action("wp_ajax_clock_in", "clock_in");
@@ -22,6 +23,10 @@ add_action( 'widgets_init', function(){
 });
 register_activation_hook( plugin_dir_path(__FILE__)."/main.php", "activate_clockin" );
 register_uninstall_hook(plugin_dir_path(__FILE__)."/main.php", "uninstall_clockin");
+
+function cl_delete_user($id){
+
+}
 
 function activate_clockin(){
 
@@ -101,7 +106,7 @@ function clock_in(){
 	$proj = urldecode($_GET["proj"]);
 
 	try{
-		$result = $cl_utils::getURL('https://api.github.com/repos/'.$proj, $meta[0]["token"]);
+		$result = $cl_utils::getURL('https://api.github.com/repos/'.$proj, $user_id);
 	}catch(Exception $e){
 		
 	}
@@ -113,7 +118,7 @@ function clock_in(){
 	if(($project = get_page_by_title( $proj, "OBJECT", "clockin_project" )) == null){
 	
 		try{
-			$readme = $cl_utils::getURL('https://api.github.com/repos/'.$proj.'/readme', $meta[0]["token"], array('Accept'=> 'application/vnd.github.VERSION.raw'));
+			$readme = $cl_utils::getURL('https://api.github.com/repos/'.$proj.'/readme', $user_id, array('Accept'=> 'application/vnd.github.VERSION.raw'));
 		}catch(Exception $e){
 			
 		}
