@@ -12,7 +12,7 @@ function clock_in_proj(item){
 			var href = more.attr("href");
 			more.html("loading");
 			jQuery.ajax(href).done(function(content){
-				more.remove();
+				more.parent().remove();
 				child.append(content);
 				that.looking = false;
 				clock_in_anchors();

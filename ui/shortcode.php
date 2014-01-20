@@ -1,4 +1,5 @@
 <?php
+start:
 $current_user = wp_get_current_user();
 $message;
 $href;
@@ -12,9 +13,9 @@ if (  !is_user_logged_in() || !($current_user instanceof WP_User) ){
 </div>
 <?php
 }else if(($meta = get_user_meta($current_user->ID, "clockin")) == array()){
-	$json = json_decode(file_get_contents(plugin_dir_path( __FILE__ )."/secret.json"));
+	$json = json_decode(file_get_contents(dirname( __FILE__ )."/../secret.json"));
 	$cid = $json->cid;
-	$redirect_uri = plugins_url("auth.php", __FILE__);
+	$redirect_uri = plugins_url("auth.php", dirname(__FILE__));
 	$state = "clock-in_plugin".$current_user->ID;
 
 	$href = "https://github.com/login/oauth/authorize";
@@ -25,7 +26,7 @@ if (  !is_user_logged_in() || !($current_user instanceof WP_User) ){
 	$message = "Authorize our plugin";
 ?>
 <div class="clockin-wrap">
-<a class="clockin_anchor" href="<?php echo $href; ?>" ><?php echo $message ?></a>
+<a href="<?php echo $href; ?>" ><?php echo $message ?></a>
 </div>
 <?php
 }else{
@@ -54,20 +55,27 @@ if (  !is_user_logged_in() || !($current_user instanceof WP_User) ){
 	}else{
 		include_once plugin_dir_path(__FILE__)."/users_projects.php"; 
 		$href = plugins_url("clocked.php", __FILE__)."?action=in";
+		try{	
+			$result = getCLProjects();
+		}catch(Exception $e){
+			goto start;
+		}
 ?>
 		<div class="clockin-wrap">
+<?php if(count($result[1]) == 0) echo "You don't have any projects, feel free to start one on <a href='http://github.com'>github!</a>";
+	else{ ?>
+			
 			Choose a project to Clock Into
-<?php //			<a href="#">Up a Page</a> ?>
 			<div class="clockin_projects_window window">
 			<ul class="clockin_projects">
-				<?php getCLProjects(1, 	$nonce); ?>
+			<?php doCLProjUI($result, $nonce)?>
 			</ul>
 			</div>
-<?php //			<a href="#">Down a Page</a> ?>
 		</div>
 		<script type="text/javascript">
 			jQuery(function($){new clock_in_proj(".clockin_projects_window")});
 		</script>
+	<?php } ?>
 <?php
 	}
 }

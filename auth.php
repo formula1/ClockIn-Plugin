@@ -50,13 +50,14 @@ $http_status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $result = json_decode($result);
 curl_close($ch);
 
+add_user_meta( $id, "clockin", array("clocked" => false, "token"=>$result->access_token) );
 
 try{
-	$userinfo = $cl_utils::getURL("https://api.github.com/user", $result->access_token);
+	$userinfo = $cl_utils::getURL("https://api.github.com/user", $id);
+	$userinfo = json_decode($userinfo);
 }catch(Exception $e){
 	die();
 }
-
 update_user_meta( $id, "clockin", array("clocked" => false, "github" => $userinfo->login, "token"=>$result->access_token) );
 wp_redirect( home_url() ); exit;
 ?>

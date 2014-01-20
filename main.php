@@ -185,7 +185,25 @@ function clock_out(){
 
 function getUsersProjects(){
 	require plugin_dir_path(__FILE__)."/ui/users_projects.php";
-	getCLProjects($_GET["page"], $_GET['nonce']);
+	try{
+		$result = getCLProjects(urldecode($_GET["page"]));
+		$head = $result[0];
+	}catch(Exception $e){
+		$json = json_decode(file_get_contents(dirname( __FILE__ )."/../secret.json"));
+		$cid = $json->cid;
+		$redirect_uri = plugins_url("auth.php", dirname(__FILE__));
+		$state = "clock-in_plugin".$current_user->ID;
+
+		$href = "https://github.com/login/oauth/authorize";
+		$href .= "?client_id=".$cid;
+		$href .= "&redirect_uri=".urlencode($redirect_uri);
+		$href .= "&state=".$state;
+		
+		$message = "Authorize our plugin";
+		die('<a href="'.$href.'" >'.$message.'</a>'.$e);
+	}
+	if(count($result[1]) == 0) die("no more");
+	else doCLProjUI($result, $_GET['nonce']);
 	die();
 }
 
