@@ -73,6 +73,7 @@ function clockin_register_js(){
 
 function initialize_clockin() {
 //	delete_user_meta(get_current_user_id(), "clockin");
+	flush_rewrite_rules();
 	register_post_type( 'clockin_project',
 		array(
 			'labels' => array(
@@ -83,11 +84,28 @@ function initialize_clockin() {
 		'public' => true,
 		'has_archive' => true,
 		'show_in_menu' => true,
-		'supports' => array('title','excerpt', 'editor')
+		'supports' => array('title','excerpt', 'editor'),
+		'rewrite' => array("slug"=>"projects")
 
 		)
 	);
 
+	register_post_type( 'clockin_object',
+		array(
+			'labels' => array(
+				'name' => __( 'Clock Ins' ),
+				'singular_name' => __( 'Clock In' )
+			),
+		'description' => 'Storing the times Developers start and stop working',
+		'public' => true,
+		'has_archive' => true,
+		'show_in_menu' => false,
+		'supports' => array('title','excerpt', 'editor', 'author', 'custom-feilds')
+
+		)
+	);
+
+	
 	add_shortcode( 'clock_in', 'clock_in_shortcode' );
 
 
@@ -102,7 +120,7 @@ function clock_in(){
 	if($user_id === 0) die("failure: need to login");
 	$meta = get_user_meta($user_id, "clockin");
 	if($meta == array()) die("failure: this user needs to verify");
-	if($meta[0]["clocked"]) die("failure: already clocked in");
+	if($meta[0]["clocked"] !== false) die("failure: already clocked in");
 	$proj = urldecode($_GET["proj"]);
 
 	try{
@@ -135,19 +153,33 @@ function clock_in(){
 		  'post_title'     => $proj, // The title of your post.
 		  'post_status'    => 'publish',
 		  'post_type'      => "clockin_project", // Default 'post'.
-		  'post_excerpt'   => $result->description, // For all your post excerpt needs.
-		  'comment_status' => 'closed' // Default is the option 'default_comment_status', or 'closed'.
+		  'post_excerpt'   => $result->description // For all your post excerpt needs.
 		);
 		$id = wp_insert_post($post, $e);
 		add_post_meta($id, "github-url", $result->html_url, true);
 	}else{ $id = $project->ID;}
+
+	$post = array(
+		'post_content'	=> '',
+		'post_title'	=> date("H:i")." started on ".$project->Title,
+		'post_status'	=> 'draft',
+		'post_type'		=> 'clockin_object',
+		'post_excerpt'	=> '',
+		'post_author'	=> $user_id
+	);
+	$cl_id = wp_insert_post($post, $e);
+	add_post_meta($cl_id, "project", $id, true);
+	add_post_meta($cl_id, "cl_start", date("Y-m-d H:i:s"), true);
+	$meta[0]["clocked"] = $cl_id;
 	
-	global $wpdb;
-	
-	$wpdb->insert( "Clock_ins", array( 'project' => $id, 'devuser' => $user_id ));
 
 	
-	$meta[0]["clocked"] = true;
+//	global $wpdb;
+	
+//	$wpdb->insert( "Clock_ins", array( 'project' => $id, 'devuser' => $user_id ));
+
+	
+//	$meta[0]["clocked"] = true;
 	update_user_meta($user_id, "clockin", $meta[0] );
 
 	die(do_shortcode("[clock_in]"));
@@ -162,7 +194,67 @@ function clock_out(){
 	if($user_id === 0) die("failure: need to login");
 	$meta = get_user_meta($user_id, "clockin");
 	if($meta == array()) die("failure: this user needs to verify");
-	if(!$meta[0]["clocked"]) die("failure: already clocked out");
+	if($meta[0]["clocked"] === false) die("failure: already clocked out");
+
+	$cl = get_post($meta[0]["clocked"], 'ARRAY_A');
+	$proj = get_post(get_post_meta($meta[0]["clocked"], "project", true));
+	$date = DateTime::createFromFormat("Y-m-d H:i:s", get_post_meta($meta[0]["clocked"], "cl_start", true));
+	$dev = $meta[0]["github"];
+	$url = "https://api.github.com/repos/".$proj->post_title."/commits";
+	$url .= "?author=".$dev;
+	$url .= "&since=".$date->format('Y-m-d').'T00:00:00Z';
+	$date->modify("+1 days");
+	$url .= "&until=".$date->format('Y-m-d').'T00:00:00Z';
+	$date->modify("-1 days");
+	try{
+		$response = $cl_utils::getUrl($url, $user_id);
+		$response = json_decode($response);
+	}catch(Exception $e){
+		$response = array();
+	}
+	
+	
+	
+	ob_start();
+?>
+	<table class="clockin_table">
+	<thead>
+		<tr><th>Time</th><th>Type</th><th>Info</th></tr>
+	</thead>
+	<tbody>
+		<tr>
+			<td><time datetime="<?php echo $date->format(DATE_W3C); ?>"><?php echo $date->format("H:i"); ?></time></td>
+			<td>Start time</td>
+			<td><?php echo $project; ?></td>
+		</tr>
+<?php
+	foreach($response as $commit){
+		$time = DateTime::createFromFormat(DATE_W3C,$commit->commit->committer->date);
+?>		
+		<tr>
+			<td><time datetime="<?php echo $time->format(DATE_W3C); ?>"><?php echo $time->format("H:i"); ?></time><td>
+			<td>Commit</td>
+			<td><?php echo $commit->message; ?></td>
+		</tr>
+<?php
+		
+	}
+	$now = new DateTime('NOW');
+?>
+		<tr>
+			<td><time datetime="<?php echo $now->format(DATE_W3C); ?>"><?php echo $now->format("H:i"); ?></time></td>
+			<td>End time</td>
+			<td><?php echo $project; ?></td>
+		</tr>
+	</tbody>
+	</table>
+<?php
+	
+	$cl["content"] = ob_get_clean();
+	$cl["excerpt"] = "From ".$date->format("H:i")." to ".$now->format("H:i")." with ".count($response)." commits";
+	
+	wp_update_post($cl);
+/*	
 
 	global $wpdb;
 	
@@ -176,7 +268,7 @@ function clock_out(){
 	
 	
 	$wpdb->update( "Clock_ins", array("duration"=>$ci), array("duration" => 0, "devuser" => $user_id));
-	
+*/	
 	$meta[0]["clocked"] = false;
 	update_user_meta($user_id, "clockin", $meta[0] );
 
