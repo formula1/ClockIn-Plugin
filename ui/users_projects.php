@@ -46,7 +46,7 @@ function doCLProjUI($result, $nonce){
 				<li>
 					<h2 class='widget-title'><?php echo $item->name; ?></h2>
 			<?php
-				if(($project = get_page_by_title( $item->full_name, "OBJECT", "clockin_project" )) != null){ 
+				if(($project = get_page_by_title( $item->name, "OBJECT", "clockin_project" )) != null){ 
 			?>
 					<a href='<?php echo get_permalink($project->ID); ?>' >Project Page</a><br />
 			<?php

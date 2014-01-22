@@ -35,6 +35,7 @@ function activate_clockin(){
 	$sql = "CREATE TABLE ".$tablename." (
 	  starttime TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	  duration INT DEFAULT 0 NOT NULL,
+	  stoptime TIMESTAMP,
 	  devuser TINYTEXT NOT NULL,
 	  project TINYTEXT NOT NULL
 	 );";
@@ -73,7 +74,8 @@ function clockin_register_js(){
 
 function initialize_clockin() {
 //	delete_user_meta(get_current_user_id(), "clockin");
-	flush_rewrite_rules();
+	global $cpt_onomies_manager;
+	
 	register_post_type( 'clockin_project',
 		array(
 			'labels' => array(
@@ -85,10 +87,25 @@ function initialize_clockin() {
 		'has_archive' => true,
 		'show_in_menu' => true,
 		'supports' => array('title','excerpt', 'editor'),
-		'rewrite' => array("slug"=>"projects")
 
 		)
 	);
+	/*
+	if ( $cpt_onomies_manager ) {
+
+		$cpt_onomies_manager->register_cpt_onomy(
+			'clockin_project',
+			'clockin_object',
+			array(
+			'labels' => array(
+				'name' => __( 'Developer Projects' ),
+				'singular_name' => __( 'Developer Project' )
+			),
+			'description' => 'Developer project',
+			'public'	=> true,
+			)
+		);
+	}
 
 	register_post_type( 'clockin_object',
 		array(
@@ -104,7 +121,7 @@ function initialize_clockin() {
 
 		)
 	);
-
+*/
 	
 	add_shortcode( 'clock_in', 'clock_in_shortcode' );
 
@@ -113,6 +130,7 @@ function initialize_clockin() {
 
 function clock_in(){
 	global $cl_utils;
+	require_once dirname(__file__)."/custom-posts/devproject.php";
 	if ( !wp_verify_nonce( $_GET['nonce'], "clock_in")) {
 		exit("failure: No naughty business please");
 	}
@@ -123,63 +141,14 @@ function clock_in(){
 	if($meta[0]["clocked"] !== false) die("failure: already clocked in");
 	$proj = urldecode($_GET["proj"]);
 
-	try{
-		$result = $cl_utils::getURL('https://api.github.com/repos/'.$proj, $user_id);
-	}catch(Exception $e){
-		
-	}
-	if($result == array()) die("failure: doesn't exsist");
-
-	$proja = explode("/",$proj);
+	$id = dev_project::findOrCreate($proj, $user_id);
 	
+	global $wpdb;
 	
-	if(($project = get_page_by_title( $proj, "OBJECT", "clockin_project" )) == null){
-	
-		try{
-			$readme = $cl_utils::getURL('https://api.github.com/repos/'.$proj.'/readme', $user_id, array('Accept'=> 'application/vnd.github.VERSION.raw'));
-		}catch(Exception $e){
-			
-		}
-			$wl = array("b", "blockquote", "br", "center", "cite", "code", "col", "colgroup", "div", "dd", "dl", "dt", "em", "font","h1", "h2", 
-		"h3", "h4", "h5", "h6", "hr", "i", "img", "li", "ol", "p", "pre", "q", "small", "span", "strike", "strong", "sub", "sup", "table", 
-		"tbody", "td", "tfoot", "th", "thread", "tr", "u", "ul"
-		);
-		$c = $cl_utils::strip_tags_content(base64_decode ($readme->content), "<script><iframe><frame><form>", true);
+	$wpdb->insert( "Clock_ins", array( 'project' => $id, 'devuser' => $user_id ));
 
 	
-		$post = array(
-		  'post_content'   => $c, // The full text of the post.
-		  'post_name'      => implode("-", $proja), // The name (slug) for your post
-		  'post_title'     => $proj, // The title of your post.
-		  'post_status'    => 'publish',
-		  'post_type'      => "clockin_project", // Default 'post'.
-		  'post_excerpt'   => $result->description // For all your post excerpt needs.
-		);
-		$id = wp_insert_post($post, $e);
-		add_post_meta($id, "github-url", $result->html_url, true);
-	}else{ $id = $project->ID;}
-
-	$post = array(
-		'post_content'	=> '',
-		'post_title'	=> date("H:i")." started on ".$project->Title,
-		'post_status'	=> 'draft',
-		'post_type'		=> 'clockin_object',
-		'post_excerpt'	=> '',
-		'post_author'	=> $user_id
-	);
-	$cl_id = wp_insert_post($post, $e);
-	add_post_meta($cl_id, "project", $id, true);
-	add_post_meta($cl_id, "cl_start", date("Y-m-d H:i:s"), true);
-	$meta[0]["clocked"] = $cl_id;
-	
-
-	
-//	global $wpdb;
-	
-//	$wpdb->insert( "Clock_ins", array( 'project' => $id, 'devuser' => $user_id ));
-
-	
-//	$meta[0]["clocked"] = true;
+	$meta[0]["clocked"] = true;
 	update_user_meta($user_id, "clockin", $meta[0] );
 
 	die(do_shortcode("[clock_in]"));
@@ -187,6 +156,7 @@ function clock_in(){
 }
 
 function clock_out(){
+	global $cl_utils;
 	if ( !wp_verify_nonce( $_REQUEST['nonce'], "clock_in")) {
 		exit("failure: No naughty business please");
 	}
@@ -196,66 +166,7 @@ function clock_out(){
 	if($meta == array()) die("failure: this user needs to verify");
 	if($meta[0]["clocked"] === false) die("failure: already clocked out");
 
-	$cl = get_post($meta[0]["clocked"], 'ARRAY_A');
-	$proj = get_post(get_post_meta($meta[0]["clocked"], "project", true));
-	$date = DateTime::createFromFormat("Y-m-d H:i:s", get_post_meta($meta[0]["clocked"], "cl_start", true));
-	$dev = $meta[0]["github"];
-	$url = "https://api.github.com/repos/".$proj->post_title."/commits";
-	$url .= "?author=".$dev;
-	$url .= "&since=".$date->format('Y-m-d').'T00:00:00Z';
-	$date->modify("+1 days");
-	$url .= "&until=".$date->format('Y-m-d').'T00:00:00Z';
-	$date->modify("-1 days");
-	try{
-		$response = $cl_utils::getUrl($url, $user_id);
-		$response = json_decode($response);
-	}catch(Exception $e){
-		$response = array();
-	}
 	
-	
-	
-	ob_start();
-?>
-	<table class="clockin_table">
-	<thead>
-		<tr><th>Time</th><th>Type</th><th>Info</th></tr>
-	</thead>
-	<tbody>
-		<tr>
-			<td><time datetime="<?php echo $date->format(DATE_W3C); ?>"><?php echo $date->format("H:i"); ?></time></td>
-			<td>Start time</td>
-			<td><?php echo $project; ?></td>
-		</tr>
-<?php
-	foreach($response as $commit){
-		$time = DateTime::createFromFormat(DATE_W3C,$commit->commit->committer->date);
-?>		
-		<tr>
-			<td><time datetime="<?php echo $time->format(DATE_W3C); ?>"><?php echo $time->format("H:i"); ?></time><td>
-			<td>Commit</td>
-			<td><?php echo $commit->message; ?></td>
-		</tr>
-<?php
-		
-	}
-	$now = new DateTime('NOW');
-?>
-		<tr>
-			<td><time datetime="<?php echo $now->format(DATE_W3C); ?>"><?php echo $now->format("H:i"); ?></time></td>
-			<td>End time</td>
-			<td><?php echo $project; ?></td>
-		</tr>
-	</tbody>
-	</table>
-<?php
-	
-	$cl["content"] = ob_get_clean();
-	$cl["excerpt"] = "From ".$date->format("H:i")." to ".$now->format("H:i")." with ".count($response)." commits";
-	
-	wp_update_post($cl);
-/*	
-
 	global $wpdb;
 	
 	$ci = $wpdb->get_var( 
@@ -265,10 +176,16 @@ function clock_out(){
 		WHERE duration = 0 
 		AND devuser = ".$user_id
 	);
+	$sql = "UPDATE clock_ins 
+		SET stoptime=CURRENT_TIMESTAMP, duration=TIME_TO_SEC(TIMEDIFF(CURRENT_TIMESTAMP,starttime))
+		WHERE duration=0 AND devuser=".$user_id;
+	require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
+	dbDelta( $sql );
+
 	
 	
-	$wpdb->update( "Clock_ins", array("duration"=>$ci), array("duration" => 0, "devuser" => $user_id));
-*/	
+//	$wpdb->update( "clock_ins", array("stoptime"=>"CURRENT_TIMESTAMP", "duration"=>"TIME_TO_SEC(TIMEDIFF(CURRENT_TIMESTAMP,starttime))"), array("duration" => 0, "devuser" => $user_id));
+
 	$meta[0]["clocked"] = false;
 	update_user_meta($user_id, "clockin", $meta[0] );
 
