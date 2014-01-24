@@ -39,7 +39,7 @@ function activate_clockin(){
 	$tablename = $wpdb->prefix ."Clock_ins";
 	global $wpdb;
 	$sql = "CREATE TABLE ".$tablename." (
-	  starttime INT DEFAULT UNIX_TIMESTAMP NOT NULL,
+	  starttime INT NOT NULL,
 	  stoptime INT DEFAULT 0 NOT NULL,
 	  devuser TINYTEXT NOT NULL,
 	  project TINYTEXT NOT NULL
@@ -150,7 +150,7 @@ function clock_in(){
 	
 	global $wpdb;
 	
-	$wpdb->insert( "Clock_ins", array( 'project' => $id, 'devuser' => $user_id ));
+	$wpdb->insert( "Clock_ins", array( 'project' => $id, 'devuser' => $user_id, 'starttime'=>time() ));
 
 	
 	$meta[0]["clocked"] = true;
@@ -175,7 +175,7 @@ function clock_out(){
 	global $wpdb;
 	
 	$sql = "UPDATE clock_ins 
-		SET stoptime=UNIX_TIMESTAMP(),
+		SET stoptime=".time()."
 		WHERE stoptime=0 AND devuser=".$user_id;
 	require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
 	dbDelta( $sql );
