@@ -23,19 +23,24 @@ add_action( 'widgets_init', function(){
 });
 register_activation_hook( plugin_dir_path(__FILE__)."/main.php", "activate_clockin" );
 register_uninstall_hook(plugin_dir_path(__FILE__)."/main.php", "uninstall_clockin");
+register_deactivation_hook(plugin_dir_path(__FILE__)."/main.php", "deactivate_clockin");
 
 function cl_delete_user($id){
 
 }
-
+function deactivate_clockin(){
+	$sql = "DROP TABLE Clock_ins";
+	global $wpdb;
+	require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
+	dbDelta( $sql );
+}
 function activate_clockin(){
 
 	$tablename = $wpdb->prefix ."Clock_ins";
 	global $wpdb;
 	$sql = "CREATE TABLE ".$tablename." (
-	  starttime TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-	  duration INT DEFAULT 0 NOT NULL,
-	  stoptime TIMESTAMP,
+	  starttime INT DEFAULT UNIX_TIMESTAMP NOT NULL,
+	  stoptime INT DEFAULT 0 NOT NULL,
 	  devuser TINYTEXT NOT NULL,
 	  project TINYTEXT NOT NULL
 	 );";
@@ -169,16 +174,9 @@ function clock_out(){
 	
 	global $wpdb;
 	
-	$ci = $wpdb->get_var( 
-		"
-		SELECT TIME_TO_SEC(TIMEDIFF(CURRENT_TIMESTAMP,starttime)) 
-		FROM clock_ins
-		WHERE duration = 0 
-		AND devuser = ".$user_id
-	);
 	$sql = "UPDATE clock_ins 
-		SET stoptime=CURRENT_TIMESTAMP, duration=TIME_TO_SEC(TIMEDIFF(CURRENT_TIMESTAMP,starttime))
-		WHERE duration=0 AND devuser=".$user_id;
+		SET stoptime=UNIX_TIMESTAMP(),
+		WHERE stoptime=0 AND devuser=".$user_id;
 	require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
 	dbDelta( $sql );
 
