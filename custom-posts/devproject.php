@@ -35,7 +35,7 @@ class dev_project{
 			);
 			$id = wp_insert_post($post, $e);
 			add_post_meta($id, "github-url", $result->html_url, true);
-			add_post_meta($id, "full_name", $proj, true);
+			add_post_meta($id, "github-full_name", $proj, true);
 		}else{ $id = $project->ID;}
 	
 		return $id;

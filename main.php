@@ -29,15 +29,19 @@ function cl_delete_user($id){
 
 }
 function deactivate_clockin(){
+   foreach( $mycustomposts as $mypost ) {
+     // Delete's each post.
+     wp_delete_post( $mypost->ID, true);
+    // Set to False if you want to send them to Trash.
+   }
+
 	$sql = "DROP TABLE Clock_ins";
-	global $wpdb;
 	require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
 	dbDelta( $sql );
 }
 function activate_clockin(){
 
-	$tablename = $wpdb->prefix ."Clock_ins";
-	global $wpdb;
+	$tablename = "Clock_ins";
 	$sql = "CREATE TABLE ".$tablename." (
 	  starttime INT NOT NULL,
 	  stoptime INT DEFAULT 0 NOT NULL,
@@ -60,7 +64,6 @@ $mycustomposts = get_pages( array( 'post_type' => 'clockin_project', 'number' =>
    }
 
 	$sql = "DROP TABLE Clock_ins";
-	global $wpdb;
 	require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
 	dbDelta( $sql );
 
@@ -142,6 +145,7 @@ function clock_in(){
 	$user_id = get_current_user_id();
 	if($user_id === 0) die("failure: need to login");
 	$meta = get_user_meta($user_id, "clockin");
+	$github = get_user_meta($user_id, "github", true);
 	if($meta == array()) die("failure: this user needs to verify");
 	if($meta[0]["clocked"] !== false) die("failure: already clocked in");
 	$proj = urldecode($_GET["proj"]);
@@ -150,7 +154,7 @@ function clock_in(){
 	
 	global $wpdb;
 	
-	$wpdb->insert( "Clock_ins", array( 'project' => $id, 'devuser' => $user_id, 'starttime'=>time() ));
+	$wpdb->insert( "Clock_ins", array( 'project' => $proj, 'devuser' => $github, 'starttime'=>time() ));
 
 	
 	$meta[0]["clocked"] = true;
@@ -170,13 +174,14 @@ function clock_out(){
 	$meta = get_user_meta($user_id, "clockin");
 	if($meta == array()) die("failure: this user needs to verify");
 	if($meta[0]["clocked"] === false) die("failure: already clocked out");
+	$github = get_user_meta($user_id, "github", true);
 
 	
 	global $wpdb;
 	
 	$sql = "UPDATE clock_ins 
 		SET stoptime=".time()."
-		WHERE stoptime=0 AND devuser=".$user_id;
+		WHERE stoptime=0 AND devuser=".$github;
 	require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
 	dbDelta( $sql );
 

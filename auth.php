@@ -58,6 +58,6 @@ try{
 }catch(Exception $e){
 	die();
 }
-update_user_meta( $id, "clockin", array("clocked" => false, "github" => $userinfo->login, "token"=>$result->access_token) );
+add_user_meta( $id, "github", $userinfo->login );
 wp_redirect( home_url() ); exit;
 ?>
